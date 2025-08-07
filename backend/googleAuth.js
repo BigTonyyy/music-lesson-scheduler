@@ -4,7 +4,8 @@ const { google } = require('googleapis');
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 const TOKEN_PATH = path.join(__dirname, 'token.json');
-const CREDENTIALS_PATH = path.join(__dirname, 'credentials.json');
+
+
 const SCOPES = [
     'https://www.googleapis.com/auth/calendar',
     'https://www.googleapis.com/auth/userinfo.email',
@@ -13,8 +14,7 @@ const SCOPES = [
 let oAuth2Client;
 
 function loadOAuthClient() {
-    const content = fs.readFileSync(CREDENTIALS_PATH);
-    const credentials = JSON.parse(content);
+    const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS);
     const { client_secret, client_id, redirect_uris } = credentials.web;
     oAuth2Client = new google.auth.OAuth2(client_id, client_secret, redirect_uris[0]);
     return oAuth2Client;
