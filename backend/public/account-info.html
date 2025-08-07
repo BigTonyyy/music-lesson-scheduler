@@ -1,0 +1,274 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <title>Account Info</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+
+        h1 {
+            text-align: center;
+        }
+
+        p {
+            margin: 10px 0;
+        }
+
+        a {
+            display: block;
+            text-align: center;
+            margin-top: 20px;
+            text-decoration: none;
+            color: #2196F3;
+        }
+
+            a:hover {
+                text-decoration: underline;
+            }
+
+        #user-info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            font-size: 1.1em;
+            color: #333;
+        }
+
+        #settings-menu {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            display: inline-block;
+        }
+
+        #settings-btn {
+            padding: 8px 16px;
+            background-color: #2196F3;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+
+        #settings-dropdown {
+            display: none;
+            position: absolute;
+            right: 0;
+            background-color: #f9f9f9;
+            min-width: 160px;
+            box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2);
+            z-index: 1;
+        }
+
+            #settings-dropdown a {
+                color: black;
+                padding: 12px 16px;
+                text-decoration: none;
+                display: block;
+            }
+
+                #settings-dropdown a:hover {
+                    background-color: #ddd;
+                }
+
+        #logout-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            padding: 8px 16px;
+            background-color: #f44336;
+            color: white;
+            border: none;
+            cursor: pointer;
+            margin-top: 40px; /* Adjust to avoid overlap with menu */
+        }
+
+        .menu-active #settings-dropdown {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div id="user-info">Loading...</div>
+    <div id="settings-menu">
+        <button id="settings-btn" onclick="toggleMenu(event)">Account Settings</button>
+        <div id="settings-dropdown">
+            <a href="/settings/personal">Personal Info</a>
+            <a href="/settings/account">Account Info</a>
+        </div>
+    </div>
+    <button id="logout-btn" onclick="logout()">Logout</button>
+    <h1>Account Info</h1>
+    <p id="plan"></p>
+    <p id="googleConnected"></p>
+    <p id="createdAt"></p>
+    <a href="/index.html">Back to Dashboard</a>
+    <script>
+        let calendar;
+        let teacherId = null;
+        // ⏱️ Helper to add 30 minutes to a time string like "18:00"
+        function add30Minutes(timeStr) {
+            const [h, m] = timeStr.split(':').map(Number);
+            const date = new Date(2000, 0, 1, h, m);
+            date.setMinutes(date.getMinutes() + 30);
+            return date.toTimeString().slice(0, 8); // Returns in "HH:MM:SS"
+        }
+        async function loadCalendar() {
+            const slug = document.getElementById('teacherSlug').value;
+            const teacherRes = await fetch(`/calendar/${slug}`);
+            const teacherData = await teacherRes.json();
+            teacherId = teacherData.teacher?.id || null;
+            if (!teacherId) return alert('Teacher not found');
+            const workingStart = teacherData.teacher.workingStart || '10:00';
+            const workingEnd = teacherData.teacher.workingEnd || '18:00';
+            if (calendar) {
+                calendar.destroy();
+            }
+            const calendarEl = document.getElementById('calendar');
+            calendar = new window.FullCalendar.Calendar(calendarEl, {
+                initialView: 'timeGridWeek',
+                nowIndicator: true,
+                selectable: true,
+                slotMinTime: workingStart + ':00',
+                slotMaxTime: add30Minutes(workingEnd),
+                headerToolbar: {
+                    left: 'prev,next today',
+                    center: 'title',
+                    right: 'timeGridWeek,timeGridDay'
+                },
+                events: async function (fetchInfo, successCallback, failureCallback) {
+                    try {
+                        const startDate = new Date(fetchInfo.startStr);
+                        const endDate = new Date(fetchInfo.endStr);
+                        const days = [];
+                        for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+                            days.push(new Date(d));
+                        }
+                        const start = fetchInfo.startStr.split('T')[0];
+                        const end = fetchInfo.endStr.split('T')[0];
+                        const eventsRes = await fetch(`/calendar/${slug}/events?start=${start}&end=${end}`);
+                        const eventsData = await eventsRes.json();
+                        const bookedEvents = eventsData.map(event => ({
+                            title: event.summary,
+                            start: event.startTime,
+                            end: event.endTime
+                        }));
+                        let availableEvents = [];
+                        for (const d of days) {
+                            const dayStr = d.toISOString().split('T')[0];
+                            const slotsRes = await fetch(`/calendar/${slug}/available-slots?date=${dayStr}`);
+                            const slotsData = await slotsRes.json();
+                            const dailySlots = (slotsData.availableSlots || []).map(slot => ({
+                                title: 'Available',
+                                start: slot.startTime,
+                                end: slot.endTime,
+                                color: 'green',
+                                textColor: 'white',
+                                extendedProps: { available: true }
+                            }));
+                            availableEvents.push(...dailySlots);
+                        }
+                        successCallback([...bookedEvents, ...availableEvents]);
+                    } catch (err) {
+                        console.error(err);
+                        failureCallback(err);
+                    }
+                },
+                eventClick: function (info) {
+                    if (info.event.extendedProps.available) {
+                        const start = info.event.start.toISOString();
+                        const end = info.event.end.toISOString();
+                        document.getElementById('slotStart').value = start;
+                        document.getElementById('slotEnd').value = end;
+                        document.getElementById('selectedSlotMsg').innerText =
+                            `🟢 Selected slot: ${info.event.start.toLocaleString()} - ${info.event.end.toLocaleString()}`;
+                    }
+                },
+                select: function (info) {
+                    // Optional: disable manual drag-to-select
+                }
+            });
+            calendar.render();
+        }
+        async function book(e) {
+            e.preventDefault();
+            const studentName = document.getElementById('studentName').value;
+            const studentEmail = document.getElementById('studentEmail').value;
+            const startTime = document.getElementById('slotStart').value;
+            const endTime = document.getElementById('slotEnd').value;
+            if (!teacherId) return alert('Teacher ID not loaded.');
+            if (!startTime || !endTime) return alert('Please select a slot on the calendar.');
+            const res = await fetch('/calendar/book', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    teacherId,
+                    studentName,
+                    studentEmail,
+                    startTime,
+                    endTime
+                }),
+            });
+            const data = await res.json();
+            document.getElementById('responseMsg').innerText = res.ok
+                ? '✅ Appointment booked!'
+                : `❌ ${data.error}`;
+            if (res.ok) {
+                document.getElementById('studentName').value = '';
+                document.getElementById('studentEmail').value = '';
+                document.getElementById('slotStart').value = '';
+                document.getElementById('slotEnd').value = '';
+                document.getElementById('selectedSlotMsg').innerText = '';
+                calendar.refetchEvents();
+            }
+        }
+        // Load logged-in user and account info
+        async function loadUserInfo() {
+            try {
+                const res = await fetch('/me');
+                const data = await res.json();
+                if (res.ok) {
+                    document.getElementById('user-info').textContent = `You are logged in as ${data.user.name || data.user.email}`;
+                    document.getElementById('plan').textContent = `Plan: ${data.user.plan || 'N/A'}`;
+                    document.getElementById('googleConnected').textContent = `Google Connected: ${data.user.googleToken ? 'Yes' : 'No'}`;
+                    document.getElementById('createdAt').textContent = `Created: ${new Date(data.user.createdAt).toLocaleDateString() || 'N/A'}`;
+                } else {
+                    alert('Error loading account info: ' + data.error);
+                    window.location.href = '/';
+                }
+            } catch (err) {
+                console.error('Fetch error:', err);
+                alert('Error loading account info: ' + err.message);
+                window.location.href = '/';
+            }
+        }
+        loadUserInfo();
+
+        // Logout function
+        async function logout() {
+            await fetch('/logout');
+            window.location.href = '/';
+        }
+
+        // Toggle settings menu
+        function toggleMenu(event) {
+            event.preventDefault();
+            const menu = document.getElementById('settings-menu');
+            if (event.target.tagName !== 'A') {
+                menu.classList.toggle('menu-active');
+            }
+        }
+
+        // Close dropdown when clicking outside, but allow link navigation
+        document.addEventListener('click', function (event) {
+            const menu = document.getElementById('settings-menu');
+            if (!menu.contains(event.target) && event.target.tagName !== 'A') {
+                menu.classList.remove('menu-active');
+            }
+        });
+    </script>
+</body>
+</html>

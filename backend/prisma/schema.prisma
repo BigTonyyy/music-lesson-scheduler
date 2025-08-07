@@ -1,0 +1,30 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+enum Role {
+  TEACHER
+  STUDENT
+}
+
+model User {
+  id String @id @default(cuid())
+  email String @unique
+  firstName String?
+  lastName String?
+  plan String @default("free")
+  calendarSlug String? @unique
+  googleToken Json?
+  calendarId String?
+  workingStart String?
+  workingEnd String?
+  createdAt DateTime @default(now())
+  teacherId String? // For students: who is their teacher?
+  role Role // e.g. 'TEACHER' or 'STUDENT'
+  officeEmail    String?  // new field for teachers
+}

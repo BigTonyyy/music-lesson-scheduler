@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Music Scheduler</title>
+    <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.css" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.js"></script>
+    <style>
+        #user-info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            font-size: 1.1em;
+            color: #333;
+        }
+
+        #settings-menu {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            display: inline-block;
+        }
+
+        #settings-btn {
+            padding: 8px 16px;
+            background-color: #2196F3;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+
+        #settings-dropdown {
+            display: none;
+            position: absolute;
+            right: 0;
+            background-color: #f9f9f9;
+            min-width: 160px;
+            box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2);
+            z-index: 1;
+        }
+
+            #settings-dropdown a {
+                color: black;
+                padding: 12px 16px;
+                text-decoration: none;
+                display: block;
+            }
+
+                #settings-dropdown a:hover {
+                    background-color: #ddd;
+                }
+
+        #logout-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            padding: 8px 16px;
+            background-color: #f44336;
+            color: white;
+            border: none;
+            cursor: pointer;
+            margin-top: 40px;
+        }
+
+        .menu-active #settings-dropdown {
+            display: block;
+        }
+
+        .fc-event-cancel-btn {
+            margin-left: 5px;
+            padding: 2px 5px;
+            background-color: #f44336;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-size: 0.8em;
+        }
+    </style>
+</head>
+<body>
+    <div id="user-info">Loading...</div>
+    <div id="settings-menu">
+        <button id="settings-btn" onclick="toggleMenu(event)">Account Settings</button>
+        <div id="settings-dropdown">
+            <a href="/settings/personal">Personal Info</a>
+            <a href="/settings/account">Account Info</a>
+        </div>
+    </div>
+    <button id="logout-btn" onclick="logout()">Logout</button>
+    <h1>📅 Book an Appointment</h1>
+    <label>Teacher ID: <span id="teacherSlug"></span></label>
+    <div id="calendar"></div>
+    <h3>Book Selected Slot</h3>
+    <p id="selectedSlotMsg"></p>
+    <form onsubmit="book(event)">
+        <input type="hidden" id="slotStart" />
+        <input type="hidden" id="slotEnd" />
+        <button type="submit">Book Appointment</button>
+    </form>
+    <p id="responseMsg"></p>
+    <script>
+        let calendar;
+        let teacherId = null;
+        let userData = null; // Store user data globally
+        // ⏱️ Helper to add 30 minutes to a time string like "18:00"
+        function add30Minutes(timeStr) {
+            const [h, m] = timeStr.split(':').map(Number);
+            const date = new Date(2000, 0, 1, h, m);
+            date.setMinutes(date.getMinutes() + 30);
+            return date.toTimeString().slice(0, 8);
+        }
+        async function loadCalendar() {
+            const slug = document.getElementById('teacherSlug').textContent;
+            if (!slug || slug === 'No teacher selected') return alert('Teacher not found');
+            const teacherRes = await fetch(`/calendar/${slug}`);
+            const teacherData = await teacherRes.json();
+            teacherId = teacherData.teacher?.id || null;
+            if (!teacherId) return alert('Teacher not found');
+            const workingStart = teacherData.teacher.workingStart || '10:00';
+            const workingEnd = teacherData.teacher.workingEnd || '18:00';
+            if (calendar) {
+                calendar.destroy();
+            }
+            const [startHour] = workingStart.split(':').map(Number);
+            const [endHour] = workingEnd.split(':').map(Number);
+            const hoursVisible = endHour - startHour;
+            const pixelsPerHour = 75; // Adjust for your layout; try 75–100
+            const calendarHeight = hoursVisible * pixelsPerHour;
+
+            const calendarEl = document.getElementById('calendar');
+            calendar = new window.FullCalendar.Calendar(calendarEl, {
+                initialView: 'timeGridWeek',
+                nowIndicator: true,
+                selectable: true,
+                slotMinTime: workingStart + ':00',
+                slotMaxTime: add30Minutes(workingEnd),
+                height: calendarHeight,
+                headerToolbar: {
+                    left: 'prev,next today',
+                    center: 'title',
+                    right: 'timeGridWeek,timeGridDay'
+                },
+                events: async function (fetchInfo, successCallback, failureCallback) {
+                    try {
+                        const startDate = new Date(fetchInfo.startStr);
+                        const endDate = new Date(fetchInfo.endStr);
+                        const days = [];
+                        for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+                            days.push(new Date(d));
+                        }
+                        const start = fetchInfo.startStr.split('T')[0];
+                        const end = fetchInfo.endStr.split('T')[0];
+                        const eventsRes = await fetch(`/calendar/${slug}/events?start=${start}&end=${end}`);
+                        const eventsData = await eventsRes.json();
+                        const bookedEvents = eventsData.map(event => ({
+                            title: event.summary,
+                            start: event.startTime,
+                            end: event.endTime,
+                            extendedProps: {
+                                studentId: event.studentId,
+                                eventId: event.eventId,
+                                isOwnEvent: userData && event.studentId === userData.id
+                            }
+                        }));
+                        let availableEvents = [];
+                        for (const d of days) {
+                            const dayStr = d.toISOString().split('T')[0];
+                            const slotsRes = await fetch(`/calendar/${slug}/available-slots?date=${dayStr}`);
+                            const slotsData = await slotsRes.json();
+                            const dailySlots = (slotsData.availableSlots || []).map(slot => ({
+                                title: 'Available',
+                                start: slot.startTime,
+                                end: slot.endTime,
+                                color: 'green',
+                                textColor: 'white',
+                                extendedProps: { available: true }
+                            }));
+                            availableEvents.push(...dailySlots);
+                        }
+                        successCallback([...bookedEvents, ...availableEvents]);
+                    } catch (err) {
+                        console.error(err);
+                        failureCallback(err);
+                    }
+                },
+                eventContent: function (info) {
+                    const event = info.event;
+                    const isOwnEvent = event.extendedProps.isOwnEvent;
+                    if (isOwnEvent) {
+                        const cancelButton = document.createElement('button');
+                        cancelButton.innerText = 'Cancel';
+                        cancelButton.className = 'fc-event-cancel-btn';
+                        cancelButton.onclick = () => cancel(event.extendedProps.eventId, event.extendedProps.studentId);
+                        const container = document.createElement('div');
+                        container.innerText = event.title;
+                        container.appendChild(cancelButton);
+                        return { domNodes: [container] };
+                    }
+                    return { html: `<div>${event.title}</div>` };
+                },
+                eventClick: function (info) {
+                    if (info.event.extendedProps.available) {
+                        const start = info.event.start.toISOString();
+                        const end = info.event.end.toISOString();
+                        document.getElementById('slotStart').value = start;
+                        document.getElementById('slotEnd').value = end;
+                        document.getElementById('selectedSlotMsg').innerText =
+                            `🟢 Selected slot: ${info.event.start.toLocaleString()} - ${info.event.end.toLocaleString()}`;
+                    }
+                },
+                select: function (info) {
+                    // Optional: disable manual drag-to-select
+                }
+            });
+            calendar.render();
+        }
+        async function book(e) {
+            e.preventDefault();
+            if (!userData) return alert('User data not loaded. Please try again.');
+            const studentId = userData.id;
+            const studentName = userData.firstName || userData.email;
+            const studentEmail = userData.email;
+            const startTime = document.getElementById('slotStart').value;
+            const endTime = document.getElementById('slotEnd').value;
+            if (!teacherId) return alert('Teacher ID not loaded.');
+            if (!startTime || !endTime) return alert('Please select a slot on the calendar.');
+            if (!studentId) return alert('Student ID not found. Please ensure you are logged in.');
+            const res = await fetch('/calendar/book', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    teacherId,
+                    studentId,
+                    studentName,
+                    studentEmail,
+                    startTime,
+                    endTime
+                }),
+            });
+            const data = await res.json();
+            document.getElementById('responseMsg').innerText = res.ok
+                ? '✅ Appointment booked!'
+                : `❌ ${data.error}`;
+            if (res.ok) {
+                document.getElementById('slotStart').value = '';
+                document.getElementById('slotEnd').value = '';
+                document.getElementById('selectedSlotMsg').innerText = '';
+                calendar.refetchEvents();
+            }
+        }
+        async function cancel(eventId, studentId) {
+            if (!confirm('Are you sure you want to cancel this lesson?')) return;
+            try {
+                const res = await fetch('/calendar/cancel', {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ eventId, studentId, teacherId })
+                });
+                const data = await res.json();
+                document.getElementById('responseMsg').innerText = res.ok
+                    ? '✅ Lesson cancelled!'
+                    : `❌ ${data.error}`;
+                if (res.ok) {
+                    alert('✅ Appointment cancelled successfully!');
+                    calendar.refetchEvents();
+                }
+            } catch (err) {
+                console.error('Cancel error:', err);
+                document.getElementById('responseMsg').innerText = '❌ Failed to cancel lesson';
+            }
+        }
+
+        async function loadUserAndCalendar() {
+            try {
+                const res = await fetch('/me');
+                const data = await res.json();
+                if (res.ok) {
+                    userData = data.user; // Store user data, including id
+                    document.getElementById('user-info').textContent = `You are logged in as ${data.user.firstName || ''} ${data.user.lastName || data.user.email || ''}`;
+                    const teacherSlugDisplay = document.getElementById('teacherSlug');
+                    if (data.user.role === 'TEACHER' && data.user.calendarSlug) {
+                        teacherSlugDisplay.textContent = data.user.calendarSlug;
+                    } else if (data.user.role === 'STUDENT' && data.user.teacherId) {
+                        teacherSlugDisplay.textContent = data.user.teacherId;
+                    } else {
+                        teacherSlugDisplay.textContent = 'No teacher selected';
+                    }
+                    loadCalendar();
+                } else {
+                    document.getElementById('user-info').textContent = 'Not logged in';
+                }
+            } catch (err) {
+                console.error('Fetch error:', err);
+                document.getElementById('user-info').textContent = 'Error loading user';
+            }
+        }
+        loadUserAndCalendar();
+        async function logout() {
+            await fetch('/logout');
+            window.location.href = '/';
+        }
+        function toggleMenu(event) {
+            event.preventDefault();
+            const menu = document.getElementById('settings-menu');
+            menu.classList.toggle('menu-active');
+        }
+        document.addEventListener('click', function (event) {
+            const menu = document.getElementById('settings-menu');
+            if (!menu.contains(event.target)) {
+                menu.classList.remove('menu-active');
+            }
+        });
+    </script>
+</body>
+</html>

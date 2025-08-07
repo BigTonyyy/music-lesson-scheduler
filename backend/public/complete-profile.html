@@ -1,0 +1,169 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <title>Complete Your Profile</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+
+        h1 {
+            text-align: center;
+        }
+
+        label {
+            display: block;
+            margin-top: 15px;
+        }
+
+        input, select {
+            width: 100%;
+            padding: 8px;
+            margin-top: 5px;
+        }
+
+        #teacherFields, #studentFields {
+            display: none;
+            margin-top: 20px;
+        }
+
+        button {
+            margin-top: 30px;
+            padding: 12px;
+            font-size: 1.1em;
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+    <h1>Complete Your Profile</h1>
+    <form id="profileForm">
+        <label>
+            First Name:
+            <input type="text" name="firstName" id="firstName" required>
+        </label>
+        <label>
+            Last Name:
+            <input type="text" name="lastName" id="lastName" required>
+        </label>
+        <label>
+            Role:
+            <select name="role" id="roleSelect" required onchange="toggleRoleFields()">
+                <option value="">Select a role</option>
+                <option value="STUDENT">Student</option>
+                <option value="TEACHER">Teacher</option>
+            </select>
+        </label>
+        <div id="teacherFields">
+            <label>
+                Working Start (HH:MM):
+                <input type="time" name="workingStart" value="10:00">
+            </label>
+            <label>
+                Working End (HH:MM):
+                <input type="time" name="workingEnd" value="18:00">
+            </label>
+            <label id="calendarLabel" style="display:none;">
+                Select Calendar:
+                <select name="calendarId" id="calendarSelect"></select>
+            </label>
+            <label id="officeEmailLabel" style="display: none;">
+                Office Email:
+                <input type="email" name="officeEmail">
+            </label>
+        </div>
+        <div id="studentFields">
+            <label>
+                Select Teacher:
+                <select name="teacherId" id="teacherSelect"></select>
+            </label>
+        </div>
+        <button type="submit">Finish Registration</button>
+    </form>
+    <script>
+        function toggleRoleFields() {
+            const role = document.getElementById("roleSelect").value;
+            const teacherFields = document.getElementById("teacherFields");
+            const studentFields = document.getElementById("studentFields");
+            const calendarLabel = document.getElementById("calendarLabel");
+            document.getElementById('officeEmailLabel').style.display = role === "TEACHER" ? "block" : "none";
+            teacherFields.style.display = role === "TEACHER" ? "block" : "none";
+            studentFields.style.display = role === "STUDENT" ? "block" : "none";
+            calendarLabel.style.display = "none";
+
+            if (role === "TEACHER") {
+                loadCalendars();
+            }
+        }
+
+        async function loadTeachers() {
+            try {
+                const res = await fetch('/teachers');
+                const data = await res.json();
+                const select = document.getElementById('teacherSelect');
+                select.innerHTML = '';
+                if (data.teachers && Array.isArray(data.teachers)) {
+                    data.teachers.forEach(t => {
+                        const opt = document.createElement('option');
+                        opt.value = t.id;
+                        opt.innerText = `${t.firstName || ''} ${t.lastName || ''}`.trim() || 'No Name';
+                        select.appendChild(opt);
+                    });
+                } else {
+                    const opt = document.createElement('option');
+                    opt.value = '';
+                    opt.innerText = 'No teachers available';
+                    select.appendChild(opt);
+                }
+            } catch (err) {
+                console.error('Error loading teachers:', err);
+                alert('Failed to load teachers: ' + err.message);
+            }
+        }
+
+        async function loadCalendars() {
+            try {
+                const res = await fetch('/me');
+                const user = await res.json();
+                const calendarsRes = await fetch(`/google-calendars/${user.user.id}`);
+                const calendarsData = await calendarsRes.json();
+
+                const calendarSelect = document.getElementById('calendarSelect');
+                calendarSelect.innerHTML = calendarsData.calendars.map(cal => {
+                    return `<option value="${cal.id}">${cal.summary}</option>`;
+                }).join('');
+
+                document.getElementById('calendarLabel').style.display = 'block';
+
+            } catch (err) {
+                console.error('Failed to load calendars:', err);
+                alert('Error fetching calendars: ' + err.message);
+            }
+        }
+
+        loadTeachers();
+
+        document.getElementById('profileForm').addEventListener('submit', async e => {
+            e.preventDefault();
+            const form = new FormData(e.target);
+            const payload = Object.fromEntries(form.entries());
+            const res = await fetch('/complete-profile', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (res.ok) {
+                alert('✅ Profile saved!');
+                window.location.href = '/index.html';
+            } else {
+                alert('❌ ' + data.error);
+            }
+        });
+    </script>
+
+</body>
+</html>

@@ -1,0 +1,237 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <title>Personal Info</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+
+        h1 {
+            text-align: center;
+        }
+
+        p {
+            margin: 10px 0;
+        }
+
+        a {
+            display: block;
+            text-align: center;
+            margin-top: 20px;
+            text-decoration: none;
+            color: #2196F3;
+        }
+
+            a:hover {
+                text-decoration: underline;
+            }
+
+        #user-info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            font-size: 1.1em;
+            color: #333;
+        }
+
+        #settings-menu {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            display: inline-block;
+        }
+
+        #settings-btn {
+            padding: 8px 16px;
+            background-color: #2196F3;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+
+        #settings-dropdown {
+            display: none;
+            position: absolute;
+            right: 0;
+            background-color: #f9f9f9;
+            min-width: 160px;
+            box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2);
+            z-index: 1;
+        }
+
+            #settings-dropdown a {
+                color: black;
+                padding: 12px 16px;
+                text-decoration: none;
+                display: block;
+            }
+
+                #settings-dropdown a:hover {
+                    background-color: #ddd;
+                }
+
+        #logout-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            padding: 8px 16px;
+            background-color: #f44336;
+            color: white;
+            border: none;
+            cursor: pointer;
+            margin-top: 40px; /* Adjust to avoid overlap with menu */
+        }
+
+        .menu-active #settings-dropdown {
+            display: block;
+        }
+
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="user-info">Loading...</div>
+    <div id="settings-menu">
+        <button id="settings-btn" onclick="toggleMenu(event)">Account Settings</button>
+        <div id="settings-dropdown">
+            <a href="/settings/personal">Personal Info</a>
+            <a href="/settings/account">Account Info</a>
+        </div>
+    </div>
+    <button id="logout-btn" onclick="logout()">Logout</button>
+    <h1>Personal Info</h1>
+    <p id="firstName"></p>
+    <p id="lastName"></p>
+    <p id="email"></p>
+    <p id="role"></p>
+    <p id="workingStart" class="hidden"></p> <!-- Initially hidden -->
+    <p id="workingEnd" class="hidden"></p>   <!-- Initially hidden -->
+    <p id="calendarSlug" class="hidden"></p> <!-- Initially hidden for teachers -->
+    <p id="officeEmail" class="hidden"></p> <!-- Initially hidden for students -->
+    <p id="teacherId" class="hidden"></p>    <!-- Initially hidden for students -->
+    <div id="calendarDropdownContainer" class="hidden">
+        <label for="calendarSelect">Preferred Google Calendar:</label><br />
+        <select id="calendarSelect"></select>
+        <button onclick="saveCalendarChoice()">Save</button>
+    </div>
+
+    <a href="/index.html">Back to Dashboard</a>
+    <script>
+        // Load logged-in user and personal info
+        let userId = null; // Needed for saving calendar later
+
+        async function loadUserInfo() {
+            try {
+                const res = await fetch('/me');
+                const data = await res.json();
+
+                if (!res.ok) {
+                    alert('Error loading personal info: ' + data.error);
+                    window.location.href = '/';
+                    return;
+                }
+
+                const user = data.user;
+                userId = user.id;
+
+                document.getElementById('user-info').textContent = `You are logged in as ${user.firstName || ''} ${user.lastName || user.email || ''}`;
+                document.getElementById('firstName').textContent = `First Name: ${user.firstName || 'N/A'}`;
+                document.getElementById('lastName').textContent = `Last Name: ${user.lastName || 'N/A'}`;
+                document.getElementById('email').textContent = `Email: ${user.email || 'N/A'}`;
+                document.getElementById('role').textContent = `Role: ${user.role || 'N/A'}`;
+
+                const workingStartElement = document.getElementById('workingStart');
+                const workingEndElement = document.getElementById('workingEnd');
+                const calendarSlugElement = document.getElementById('calendarSlug');
+                const teacherIdElement = document.getElementById('teacherId');
+                const officeEmailElement = document.getElementById('officeEmail');
+                const calendarDropdownContainer = document.getElementById('calendarDropdownContainer');
+
+                if (user.role === 'TEACHER') {
+                    // Display teacher info
+                    workingStartElement.textContent = `Working Start: ${user.workingStart || 'N/A'}`;
+                    workingEndElement.textContent = `Working End: ${user.workingEnd || 'N/A'}`;
+                    calendarSlugElement.textContent = `Teacher ID: ${user.calendarSlug || 'N/A'}`;
+                    officeEmailElement.textContent = `Office Email: ${user.officeEmail || 'N/A'}`;
+                    workingStartElement.classList.remove('hidden');
+                    workingEndElement.classList.remove('hidden');
+                    calendarSlugElement.classList.remove('hidden');
+                    officeEmailElement.classList.remove('hidden');
+                    teacherIdElement.classList.add('hidden');
+                    calendarDropdownContainer.classList.remove('hidden');
+
+                    // Populate calendar dropdown
+                    const calendarsRes = await fetch(`/google-calendars/${user.id}`);
+                    const calendarsData = await calendarsRes.json();
+                    const calendarSelect = document.getElementById('calendarSelect');
+
+                    calendarSelect.innerHTML = calendarsData.calendars.map(cal => {
+                        const selected = cal.id === user.calendarId ? 'selected' : '';
+                        return `<option value="${cal.id}" ${selected}>${cal.summary}</option>`;
+                    }).join('');
+
+                } else if (user.role === 'STUDENT') {
+                    // Display student info
+                    teacherIdElement.textContent = `Teacher ID: ${user.teacherId || 'N/A'}`;
+                    teacherIdElement.classList.remove('hidden');
+                    workingStartElement.classList.add('hidden');
+                    workingEndElement.classList.add('hidden');
+                    calendarSlugElement.classList.add('hidden');
+                    calendarDropdownContainer.classList.add('hidden');
+                    officeEmailElement.classList.add('hidden');
+                }
+
+            } catch (err) {
+                console.error('Fetch error:', err);
+                alert('Error loading personal info: ' + err.message);
+                window.location.href = '/';
+            }
+        }
+
+        loadUserInfo();
+
+        // Logout function
+        async function logout() {
+            await fetch('/logout');
+            window.location.href = '/';
+        }
+
+        // Toggle settings menu
+        function toggleMenu(event) {
+            event.preventDefault();
+            const menu = document.getElementById('settings-menu');
+            if (event.target.tagName !== 'A') {
+                menu.classList.toggle('menu-active');
+            }
+        }
+        async function saveCalendarChoice() {
+            const calendarId = document.getElementById('calendarSelect').value;
+            const res = await fetch(`/google-calendars/${userId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ calendarId })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                alert('✅ Calendar updated successfully.');
+            } else {
+                alert('❌ Failed to update calendar: ' + data.error);
+            }
+        }
+
+        // Close dropdown when clicking outside, but allow link navigation
+        document.addEventListener('click', function (event) {
+            const menu = document.getElementById('settings-menu');
+            if (!menu.contains(event.target) && event.target.tagName !== 'A') {
+                menu.classList.remove('menu-active');
+            }
+        });
+    </script>
+</body>
+</html>

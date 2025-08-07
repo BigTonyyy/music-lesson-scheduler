@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Welcome to Music Scheduler</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            padding-top: 100px;
+        }
+
+        button, select {
+            padding: 12px 24px;
+            margin: 10px;
+            font-size: 18px;
+            cursor: pointer;
+        }
+
+        select {
+            font-size: 16px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎵 Welcome to Music Scheduler</h1>
+    <p>Sign in with Google to get started</p>
+
+    <div>
+        <label for="role">I am a:</label>
+        <select id="role">
+            <option value="STUDENT">Student</option>
+            <option value="TEACHER">Teacher</option>
+        </select>
+    </div>
+
+    <button onclick="signIn('create')">Create Account</button><br />
+    <button onclick="signIn('login')">Already Have an Account?</button>
+
+    <script>
+        function signIn(mode) {
+            const role = document.getElementById('role').value;
+            window.location.href = `/auth/google?mode=${encodeURIComponent(mode)}&role=${encodeURIComponent(role)}`;
+        }
+    </script>
+</body>
+</html>
