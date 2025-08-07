@@ -3,3 +3,6 @@ node_modules
 .env
 
 /generated/prisma
+backend/token.json
+backend/credentials.json
+backend/config/firebase-service-account.json
