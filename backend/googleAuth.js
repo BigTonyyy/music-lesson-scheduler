@@ -15,8 +15,10 @@ let oAuth2Client;
 
 function loadOAuthClient() {
     const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS);
-    const { client_secret, client_id, redirect_uris } = credentials.web;
-    oAuth2Client = new google.auth.OAuth2(client_id, client_secret, redirect_uris[0]);
+    const { client_secret, client_id } = credentials.web;
+    const redirectUri = process.env.GOOGLE_REDIRECT_URI;
+    oAuth2Client = new google.auth.OAuth2(client_id, client_secret, redirectUri);
+
     return oAuth2Client;
 }
 
